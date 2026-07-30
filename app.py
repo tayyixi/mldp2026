@@ -396,6 +396,9 @@ with tab_single:
                 'euribor3m': euribor3m, 'nr.employed': nr_employed
             }])
 
+            # Map pdays or previous to contacted_before based on how you engineered it in training
+            input_data['contacted_before'] = input_data['pdays'].apply(lambda x: 0 if x == 999 else 1)
+
             try:
                 prob = model.predict_proba(input_data)[0][1]
                 pred = model.predict(input_data)[0]
@@ -463,7 +466,9 @@ with tab_batch:
                     with st.spinner("Processing records..."):
                         # Drop target column if present in evaluation file
                         eval_df = batch_df.drop(columns=['y'], errors='ignore')
-
+                        if 'contacted_before' not in eval_df.columns:
+                            eval_df['contacted_before'] = eval_df['pdays'].apply(lambda x: 0 if x == 999 else 1)
+                        
                         preds = model.predict(eval_df)
                         probs = model.predict_proba(eval_df)[:, 1]
 
