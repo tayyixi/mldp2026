@@ -18,23 +18,18 @@ st.set_page_config(
 # ----------------------------------------------------------------------------
 st.markdown("""
 <style>
-    /* Google Fonts Import */
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 
     html, body, [class*="css"]  {
         font-family: 'Plus Jakarta Sans', sans-serif;
     }
 
-    /* Main Container Padding */
     .block-container {
         padding-top: 1.8rem !important;
         padding-bottom: 2rem !important;
         max-width: 95% !important;
     }
 
-    /* ==========================================================================
-       SIDEBAR CUSTOMIZATION
-       ========================================================================== */
     [data-testid="stSidebar"] {
         background-color: #0F172A !important;
         border-right: 1px solid #1E293B !important;
@@ -175,9 +170,6 @@ st.markdown("""
         box-shadow: 0 0 8px #34D399;
     }
 
-    /* ==========================================================================
-       MAIN DASHBOARD CARDS & COMPONENTS
-       ========================================================================== */
     .hero-banner {
         background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%);
         border: 1px solid #334155;
@@ -212,15 +204,6 @@ st.markdown("""
         margin-bottom: 0.8rem;
     }
 
-    .glass-card {
-        background: #1E293B;
-        border: 1px solid #334155;
-        border-radius: 14px;
-        padding: 1.25rem;
-        margin-bottom: 1rem;
-    }
-
-    /* Score Output Badges */
     .score-high {
         background: rgba(16, 185, 129, 0.15);
         border: 1px solid #10B981;
@@ -239,7 +222,6 @@ st.markdown("""
         text-align: center;
     }
 
-    /* Streamlit Input Cleanups */
     .stButton>button {
         background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%) !important;
         color: white !important;
@@ -269,8 +251,9 @@ def load_model():
 try:
     model = load_model()
     MODEL_LOADED = True
-except FileNotFoundError:
+except Exception as e:
     MODEL_LOADED = False
+    MODEL_LOAD_ERROR = str(e)
 
 # ----------------------------------------------------------------------------
 # 4. Sidebar Component
@@ -331,13 +314,12 @@ with st.sidebar:
         </div>
         """, unsafe_allow_html=True)
     else:
-        st.error("`final_model.pkl` not found. Place model in directory.", icon="🚨")
+        st.error(f"`final_model.pkl` not loaded properly. Ensure model pipeline is saved.", icon="🚨")
 
 # ----------------------------------------------------------------------------
 # 5. Main Content Area
 # ----------------------------------------------------------------------------
 
-# Academic Metadata Header
 with st.expander("🎓 Module Information & Declaration of Originality", expanded=False):
     st.markdown("""
     **School of Informatics & IT** | Diploma in Applied Artificial Intelligence  
@@ -349,7 +331,6 @@ with st.expander("🎓 Module Information & Declaration of Originality", expande
     *I am the originator of this work, and I have appropriately acknowledged all other original sources used as my references. I understand that Plagiarism is an academic offence and disciplinary action will be enforced if violated.*
     """)
 
-# Hero Section
 st.markdown("""
 <div class="hero-banner">
     <div class="academic-badge">CAI2C08 MLDP Production App</div>
@@ -358,7 +339,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Main Application Tabs
 tab_single, tab_batch, tab_eda = st.tabs(["🎯 Single Lead Scoring", "📊 Batch Processing", "📈 Model Insights"])
 
 # ----------------------------------------------------------------------------
@@ -383,7 +363,7 @@ with tab_single:
             housing = st.selectbox("Housing Loan?", ["yes", "no", "unknown"])
             loan = st.selectbox("Personal Loan?", ["no", "yes", "unknown"])
             contact = st.selectbox("Contact Communication", ["cellular", "telephone"])
-            duration = st.number_input("Last Call Duration (seconds)", min_value=0, max_value=5000, value=240, help="Important: Strongly impacts outcome, but only known after call completes.")
+            duration = st.number_input("Last Call Duration (seconds)", min_value=0, max_value=5000, value=240, help="Important: Strongly impacts outcome.")
 
         with col3:
             st.markdown("##### 📉 Economic Indicators")
@@ -393,7 +373,7 @@ with tab_single:
             euribor3m = st.slider("Euribor 3 Month Rate", 0.6, 5.1, 4.8)
             nr_employed = st.number_input("Number of Employees", min_value=4900.0, max_value=5300.0, value=5191.0)
 
-        # Context features hidden/defaulted for simplified UI
+        # Context features defaulted for single scoring UI
         month = "may"
         day_of_week = "thu"
         campaign = 1
@@ -405,7 +385,7 @@ with tab_single:
 
     if submit_btn:
         if MODEL_LOADED:
-            # Construct DataFrame matching training schema
+            # Match schema expected by training data
             input_data = pd.DataFrame([{
                 'age': age, 'job': job, 'marital': marital, 'education': education,
                 'default': default, 'housing': housing, 'loan': loan, 'contact': contact,
@@ -417,7 +397,6 @@ with tab_single:
             }])
 
             try:
-                # Predict
                 prob = model.predict_proba(input_data)[0][1]
                 pred = model.predict(input_data)[0]
 
@@ -445,14 +424,15 @@ with tab_single:
                 with res_col2:
                     st.markdown("##### Model Decision Summary")
                     st.progress(float(prob))
-                    st.write(f"- **Target Prediction**: {'`Subscribed (Yes)`' if pred == 'yes' or pred == 1 else '`Not Subscribed (No)`'}")
+                    st.write(f"- **Target Prediction**: {'`Subscribed (Yes)`' if str(pred).lower() in ['yes', '1'] else '`Not Subscribed (No)`'}")
                     st.write(f"- **Confidence Score**: `{prob:.4f}`")
-                    st.caption("Note: Probability calculated using standard decision threshold (0.50). Adjust operational threshold depending on call center capacity.")
+                    st.caption("Note: Probability calculated using standard decision threshold (0.50).")
 
             except Exception as e:
                 st.error(f"Prediction Pipeline Error: {e}")
+                st.info("Tip: Ensure `final_model.pkl` is an entire Scikit-Learn `Pipeline` containing both preprocessing (OneHotEncoder/Scaler) and classifier.")
         else:
-            st.warning("Cannot generate prediction because `final_model.pkl` is missing.")
+            st.warning("Cannot generate prediction because `final_model.pkl` is missing or invalid.")
 
 # ----------------------------------------------------------------------------
 # TAB 2: Batch Processing
@@ -465,29 +445,41 @@ with tab_batch:
 
     if uploaded_file is not None:
         try:
-            batch_df = pd.read_csv(uploaded_file, sep=None, engine='python')
+            # Handle potential semicolon or comma delimiters automatically
+            try:
+                batch_df = pd.read_csv(uploaded_file, sep=';')
+                if batch_df.shape[1] <= 1:
+                    uploaded_file.seek(0)
+                    batch_df = pd.read_csv(uploaded_file, sep=',')
+            except Exception:
+                uploaded_file.seek(0)
+                batch_df = pd.read_csv(uploaded_file, sep=None, engine='python')
+
+            st.write("**Dataset Preview:**")
             st.dataframe(batch_df.head(5), use_container_width=True)
 
             if st.button("Score Uploaded Dataset"):
                 if MODEL_LOADED:
                     with st.spinner("Processing records..."):
-                        preds = model.predict(batch_df)
-                        probs = model.predict_proba(batch_df)[:, 1]
+                        # Drop target column if present in evaluation file
+                        eval_df = batch_df.drop(columns=['y'], errors='ignore')
+
+                        preds = model.predict(eval_df)
+                        probs = model.predict_proba(eval_df)[:, 1]
 
                         batch_df['Predicted_Subscription'] = preds
                         batch_df['Conversion_Probability'] = probs
 
                         st.success("Batch scoring complete!")
 
-                        # KPI Summary
                         kpi1, kpi2, kpi3 = st.columns(3)
                         kpi1.metric("Total Leads Processed", len(batch_df))
-                        kpi2.metric("Target High-Probability Leads", sum(probs >= 0.5))
+                        kpi2.metric("Target High-Probability Leads", int(sum(probs >= 0.5)))
                         kpi3.metric("Avg Conversion Likelihood", f"{np.mean(probs):.1%}")
 
-                        st.dataframe(batch_df[['age', 'job', 'contact', 'duration', 'Conversion_Probability', 'Predicted_Subscription']], use_container_width=True)
+                        display_cols = [c for c in ['age', 'job', 'contact', 'duration', 'Conversion_Probability', 'Predicted_Subscription'] if c in batch_df.columns]
+                        st.dataframe(batch_df[display_cols], use_container_width=True)
 
-                        # CSV Download
                         csv = batch_df.to_csv(index=False).encode('utf-8')
                         st.download_button("Download Scored Leads CSV", data=csv, file_name="scored_leads.csv", mime="text/csv")
                 else:
