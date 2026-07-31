@@ -347,6 +347,12 @@ tab_single, tab_batch, tab_eda = st.tabs(["🎯 Single Lead Scoring", "📊 Batc
 with tab_single:
     st.markdown("### Client Profile & Interaction Features")
     
+    st.caption(
+        "Note: `duration`, `emp.var.rate`, and `nr.employed` are intentionally **not** collected here — "
+        "they were dropped in training (call-duration leakage + macro-economic multicollinearity, see "
+        "notebook Section 3.2), so they would have no effect on the score even if shown."
+    )
+
     with st.form("single_lead_form"):
         col1, col2, col3 = st.columns(3)
 
@@ -358,46 +364,40 @@ with tab_single:
             education = st.selectbox("Education Level", ["university.degree", "high.school", "basic.9y", "professional.course", "basic.4y", "basic.6y", "illiterate", "unknown"])
 
         with col2:
-            st.markdown("##### 📞 Campaign Contacts")
+            st.markdown("##### 📞 Financial & Contact Profile")
             default = st.selectbox("Credit in Default?", ["no", "yes", "unknown"])
             housing = st.selectbox("Housing Loan?", ["yes", "no", "unknown"])
             loan = st.selectbox("Personal Loan?", ["no", "yes", "unknown"])
             contact = st.selectbox("Contact Communication", ["cellular", "telephone"])
-            duration = st.number_input("Last Call Duration (seconds)", min_value=0, max_value=5000, value=240, help="Important: Strongly impacts outcome.")
+            month = st.selectbox("Contact Month", ["mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], index=2)
+            day_of_week = st.selectbox("Contact Day of Week", ["mon", "tue", "wed", "thu", "fri"], index=3)
 
         with col3:
-            st.markdown("##### 📉 Economic Indicators")
-            emp_var_rate = st.slider("Employment Variation Rate", -3.4, 1.4, 1.1)
+            st.markdown("##### 📉 Campaign History & Economic Climate")
+            campaign = st.number_input("Contacts This Campaign", min_value=1, max_value=50, value=1)
+            previous = st.number_input("Contacts Before This Campaign", min_value=0, max_value=10, value=0)
+            contacted_before_choice = st.selectbox("Previously Contacted (any earlier campaign)?", ["No", "Yes"])
+            poutcome = st.selectbox("Previous Campaign Outcome", ["nonexistent", "failure", "success"])
             cons_price_idx = st.slider("Consumer Price Index", 92.2, 94.8, 93.9)
             cons_conf_idx = st.slider("Consumer Confidence Index", -50.8, -26.9, -36.4)
             euribor3m = st.slider("Euribor 3 Month Rate", 0.6, 5.1, 4.8)
-            nr_employed = st.number_input("Number of Employees", min_value=4900.0, max_value=5300.0, value=5191.0)
-
-        # Context features defaulted for single scoring UI
-        month = "may"
-        day_of_week = "thu"
-        campaign = 1
-        pdays = 999
-        previous = 0
-        poutcome = "nonexistent"
 
         submit_btn = st.form_submit_button("⚡ Compute Subscription Probability")
 
     if submit_btn:
         if MODEL_LOADED:
-            # Match schema expected by training data
+            # Match schema expected by the trained pipeline (X_fe in the notebook) — every field
+            # below is a feature the final model actually consumes; nothing here is decorative.
             input_data = pd.DataFrame([{
                 'age': age, 'job': job, 'marital': marital, 'education': education,
                 'default': default, 'housing': housing, 'loan': loan, 'contact': contact,
-                'month': month, 'day_of_week': day_of_week, 'duration': duration,
-                'campaign': campaign, 'pdays': pdays, 'previous': previous,
-                'poutcome': poutcome, 'emp.var.rate': emp_var_rate,
+                'month': month, 'day_of_week': day_of_week,
+                'campaign': campaign, 'previous': previous,
+                'poutcome': poutcome,
                 'cons.price.idx': cons_price_idx, 'cons.conf.idx': cons_conf_idx,
-                'euribor3m': euribor3m, 'nr.employed': nr_employed
+                'euribor3m': euribor3m,
+                'contacted_before': 1 if contacted_before_choice == "Yes" else 0
             }])
-
-            # Map pdays or previous to contacted_before based on how you engineered it in training
-            input_data['contacted_before'] = input_data['pdays'].apply(lambda x: 0 if x == 999 else 1)
 
             try:
                 prob = model.predict_proba(input_data)[0][1]
@@ -500,8 +500,14 @@ with tab_eda:
     st.markdown("""
     * **Objective**: Rank prospective clients based on their likelihood to subscribe to a term deposit (`y = yes/no`).
     * **Metric Choice**: Focus on **Recall (Class 'Yes')** to minimize missed potential subscribers while maintaining balanced **Precision** to avoid wasted call center hours.
-    * **Key Drivers**:
-        * **Call Duration**: Single strongest predictor of interest.
-        * **Economic Climate**: `euribor3m` and `nr.employed` heavily influence financial decision-making.
-        * **Previous Success**: Prior campaign outcome (`poutcome = success`) is a high-yield lead signal.
+    * **Key Drivers** (by permutation importance on the final tuned model — notebook Section 6.2):
+        * **Previous Campaign Outcome**: clients whose last `poutcome` was "success" subscribe again
+          roughly 8x more often than clients never previously contacted.
+        * **`euribor3m`**: the strongest macro-economic signal; kept over `emp.var.rate` / `nr.employed`,
+          which were dropped for near-perfect correlation with it (r ≥ 0.90).
+        * **`contacted_before`**: engineered from the raw `pdays` sentinel (999 = never contacted) into
+          a clean binary flag.
+    * **Deliberately excluded features**: `duration` (only known *after* a call ends — using it would
+      leak the outcome and produce an unrealistically high, undeployable accuracy) and `emp.var.rate` /
+      `nr.employed` (redundant with `euribor3m`). See notebook Section 3.2 for the full rationale.
     """)
